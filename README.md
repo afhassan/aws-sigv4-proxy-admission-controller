@@ -113,6 +113,33 @@ kubectl get pod -n sidecar
 
 2 pods should be visible within the sleep pod.
 
+### Restricting access to the sidecar proxy port (v1.2 and earlier)
+
+For versions 1.2 and earlier, the injected `aws-sigv4-proxy` sidecar listens on `0.0.0.0:8005` and signs requests with the pod's IAM role (IRSA) **without authenticating the caller**. With default pod networking, any pod that can reach an injected pod's IP can get requests signed with that pod's identity. We strongly recommend restricting ingress to 8005 with a `NetworkPolicy`. Because the sidecar is reached over `localhost` within the pod, blocking cross-pod ingress to 8005 is safe.
+
+**To restrict access:**
+
+1. Enable NetworkPolicy enforcement (or the policy is silently ignored). On EKS VPC CNI: `aws eks update-addon --cluster-name <cluster> --addon-name vpc-cni --resolve-conflicts PRESERVE --configuration-values '{"enableNetworkPolicy":"true"}'`
+2. Apply a NetworkPolicy that lists the ports your app needs and leaves 8005 out. A NetworkPolicy blocks every port you don't list, so omitting 8005 blocks it — but be sure to list the ports you do need (app, probes, metrics), or they'll be blocked as well.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-sigv4-proxy-8005
+  namespace: <injection-enabled-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <your-app>             # the injected pods
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: <your-app-port>   # 8005 intentionally omitted -> denied
+```
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
